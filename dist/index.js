@@ -1,9 +1,3 @@
-import {
-  __toESM,
-  require_native,
-  rollup
-} from "./chunk-XFMAP2PF.js";
-
 // src/plugin.ts
 import path4 from "path";
 import { pathToFileURL } from "url";
@@ -247,13 +241,7 @@ async function buildPageIndex(args) {
 import path3 from "path";
 import fs from "fs/promises";
 import { createHash } from "crypto";
-
-// node_modules/rollup/dist/es/rollup.js
-var import_native = __toESM(require_native(), 1);
-import "path";
-import "process";
-import "perf_hooks";
-import "fs/promises";
+import { rollup } from "rollup";
 
 // src/manifest.ts
 function js(value) {
@@ -438,17 +426,4 @@ function htPages(options = {}) {
 export {
   htPages
 };
-/*! Bundled license information:
-
-rollup/dist/es/rollup.js:
-  (*
-    @license
-  	Rollup.js v4.59.0
-  	Sun, 22 Feb 2026 07:31:53 GMT - commit ae846957f109690a866cc3e4c073613c338d3476
-  
-  	https://github.com/rollup/rollup
-  
-  	Released under the MIT License.
-  *)
-*/
 //# sourceMappingURL=index.js.map
