@@ -37,6 +37,7 @@ interface HtPagesPluginOptions {
     cleanUrls?: boolean;
     ssrPlugins?: Plugin[];
     mapOutputPath?: (page: HtPageInfo) => string;
+    debug?: boolean;
 }
 
 declare function htPages(options?: HtPagesPluginOptions): Plugin$1;

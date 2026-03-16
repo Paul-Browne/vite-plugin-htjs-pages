@@ -339,6 +339,7 @@ htPages({
 | `renderConcurrency` | concurrent page renders |
 | `renderBatchSize` | render batch size |
 | `mapOutputPath` | customize output path |
+| `debug` | console logging for debugging |
 
 ---
 

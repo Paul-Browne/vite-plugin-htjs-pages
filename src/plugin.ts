@@ -3,11 +3,13 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import pLimit from 'p-limit';
 import type { Plugin, ViteDevServer } from 'vite';
+
 import { discoverEntryPages } from './discover';
 import { installDevServer } from './dev-server';
 import { buildPageIndex } from './page-index';
 import { buildRenderBundle } from './render-bundle';
 import { renderPage } from './render-runtime';
+
 import type { HtPageInfo, HtPageModule, HtPagesPluginOptions } from './types';
 import { PLUGIN_NAME, VIRTUAL_BUILD_ENTRY_ID, CACHE_DIR_NAME } from './constants';
 
@@ -44,9 +46,16 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
 
   const cleanUrls = options.cleanUrls ?? true;
 
+  function logDebug(enabled: boolean | undefined, ...args: unknown[]) {
+    if (!enabled) return;
+    console.log(`[${PLUGIN_NAME}]`, ...args);
+  }
+
   async function loadDevPages(): Promise<HtPageInfo[]> {
     const entries = await discoverEntryPages(root, options);
     const modulesByEntry = new Map<string, HtPageModule>();
+
+    logDebug(options.debug, 'discovered entries', entries.map((e) => e.relativePath));
 
     if (!server) return [];
 
@@ -64,7 +73,50 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
       cleanUrls,
     });
 
+    logDebug(
+      options.debug,
+      'dev pages',
+      devPages.map((p) => `${p.routePath} -> ${p.relativePath}`),
+    );
+
     return devPages;
+  }
+
+  async function buildPagesPipeline() {
+    const entries = await discoverEntryPages(root, options);
+    const cacheDir = path.join(root, CACHE_DIR_NAME);
+
+    const entriesKey = createEntriesKey(entries);
+
+    let bundlePath: string;
+    if (cachedBundlePath && cachedManifestKey === entriesKey) {
+      bundlePath = cachedBundlePath;
+    } else {
+      bundlePath = await buildRenderBundle({
+        entries,
+        cacheDir,
+        ssrPlugins: options.ssrPlugins,
+      });
+      cachedManifestKey = entriesKey;
+      cachedBundlePath = bundlePath;
+    }
+
+    logDebug(options.debug, 'render bundle', bundlePath);
+
+    const manifest = await importManifest(bundlePath);
+    const modulesByEntry = new Map<string, HtPageModule>();
+
+    for (const rec of manifest) {
+      modulesByEntry.set(rec.page.entryPath, rec.mod);
+    }
+
+    const pages = await buildPageIndex({
+      entries,
+      modulesByEntry,
+      cleanUrls,
+    });
+
+    return { entries, bundlePath, modulesByEntry, pages };
   }
 
   return {
@@ -137,39 +189,9 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
     },
 
     async generateBundle(_, bundle) {
-      const entries = await discoverEntryPages(root, options);
-      const cacheDir = path.join(
-        root,
-        CACHE_DIR_NAME,
-      );
+      const { modulesByEntry, pages } = await buildPagesPipeline();
 
-      const entriesKey = createEntriesKey(entries);
-
-      let bundlePath: string;
-      if (cachedBundlePath && cachedManifestKey === entriesKey) {
-        bundlePath = cachedBundlePath;
-      } else {
-        bundlePath = await buildRenderBundle({
-          entries,
-          cacheDir,
-          ssrPlugins: options.ssrPlugins,
-        });
-        cachedManifestKey = entriesKey;
-        cachedBundlePath = bundlePath;
-      }
-
-      const manifest = await importManifest(bundlePath);
-      const modulesByEntry = new Map<string, HtPageModule>();
-
-      for (const rec of manifest) {
-        modulesByEntry.set(rec.page.entryPath, rec.mod);
-      }
-
-      const pages = await buildPageIndex({
-        entries,
-        modulesByEntry,
-        cleanUrls,
-      });
+      logDebug(options.debug, 'emitting pages', pages.map((p) => p.fileName));
 
       const limit = pLimit(options.renderConcurrency ?? 8);
       const batchSize =
@@ -182,7 +204,9 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
             limit(async () => {
               const mod = modulesByEntry.get(page.entryPath);
               if (!mod) {
-                throw new Error(`[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`);
+                throw new Error(
+                  `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`,
+                );
               }
 
               const html = await renderPage(page, mod, false);

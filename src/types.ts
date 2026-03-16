@@ -44,4 +44,5 @@ export interface HtPagesPluginOptions {
   cleanUrls?: boolean;
   ssrPlugins?: RollupPlugin[];
   mapOutputPath?: (page: HtPageInfo) => string;
+  debug?: boolean;
 }

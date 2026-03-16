@@ -386,9 +386,14 @@ function htPages(options = {}) {
   let cachedManifestKey = null;
   let cachedBundlePath = null;
   const cleanUrls = options.cleanUrls ?? true;
+  function logDebug(enabled, ...args) {
+    if (!enabled) return;
+    console.log(`[${PLUGIN_NAME}]`, ...args);
+  }
   async function loadDevPages() {
     const entries = await discoverEntryPages(root, options);
     const modulesByEntry = /* @__PURE__ */ new Map();
+    logDebug(options.debug, "discovered entries", entries.map((e) => e.relativePath));
     if (!server) return [];
     for (const entry of entries) {
       const mod = await server.ssrLoadModule(
@@ -401,7 +406,41 @@ function htPages(options = {}) {
       modulesByEntry,
       cleanUrls
     });
+    logDebug(
+      options.debug,
+      "dev pages",
+      devPages.map((p) => `${p.routePath} -> ${p.relativePath}`)
+    );
     return devPages;
+  }
+  async function buildPagesPipeline() {
+    const entries = await discoverEntryPages(root, options);
+    const cacheDir = path4.join(root, CACHE_DIR_NAME);
+    const entriesKey = createEntriesKey(entries);
+    let bundlePath;
+    if (cachedBundlePath && cachedManifestKey === entriesKey) {
+      bundlePath = cachedBundlePath;
+    } else {
+      bundlePath = await buildRenderBundle({
+        entries,
+        cacheDir,
+        ssrPlugins: options.ssrPlugins
+      });
+      cachedManifestKey = entriesKey;
+      cachedBundlePath = bundlePath;
+    }
+    logDebug(options.debug, "render bundle", bundlePath);
+    const manifest = await importManifest(bundlePath);
+    const modulesByEntry = /* @__PURE__ */ new Map();
+    for (const rec of manifest) {
+      modulesByEntry.set(rec.page.entryPath, rec.mod);
+    }
+    const pages = await buildPageIndex({
+      entries,
+      modulesByEntry,
+      cleanUrls
+    });
+    return { entries, bundlePath, modulesByEntry, pages };
   }
   return {
     name: PLUGIN_NAME,
@@ -458,34 +497,8 @@ function htPages(options = {}) {
       return void 0;
     },
     async generateBundle(_, bundle) {
-      const entries = await discoverEntryPages(root, options);
-      const cacheDir = path4.join(
-        root,
-        CACHE_DIR_NAME
-      );
-      const entriesKey = createEntriesKey(entries);
-      let bundlePath;
-      if (cachedBundlePath && cachedManifestKey === entriesKey) {
-        bundlePath = cachedBundlePath;
-      } else {
-        bundlePath = await buildRenderBundle({
-          entries,
-          cacheDir,
-          ssrPlugins: options.ssrPlugins
-        });
-        cachedManifestKey = entriesKey;
-        cachedBundlePath = bundlePath;
-      }
-      const manifest = await importManifest(bundlePath);
-      const modulesByEntry = /* @__PURE__ */ new Map();
-      for (const rec of manifest) {
-        modulesByEntry.set(rec.page.entryPath, rec.mod);
-      }
-      const pages = await buildPageIndex({
-        entries,
-        modulesByEntry,
-        cleanUrls
-      });
+      const { modulesByEntry, pages } = await buildPagesPipeline();
+      logDebug(options.debug, "emitting pages", pages.map((p) => p.fileName));
       const limit = pLimit(options.renderConcurrency ?? 8);
       const batchSize = options.renderBatchSize ?? Math.max(options.renderConcurrency ?? 8, 32);
       for (const batch of chunkArray(pages, batchSize)) {
@@ -494,7 +507,9 @@ function htPages(options = {}) {
             (page) => limit(async () => {
               const mod = modulesByEntry.get(page.entryPath);
               if (!mod) {
-                throw new Error(`[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`);
+                throw new Error(
+                  `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`
+                );
               }
               const html = await renderPage(page, mod, false);
               this.emitFile({
