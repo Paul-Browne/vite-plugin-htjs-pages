@@ -26,39 +26,40 @@ function normalizeFsPath(p) {
   return toPosix(path.resolve(p));
 }
 
-// src/constants.ts
-var PLUGIN_NAME = "vite-plugin-htjs-pages";
-var VIRTUAL_BUILD_ENTRY_ID = `\0${PLUGIN_NAME}:build-entry`;
-var VIRTUAL_MANIFEST_ID = `\0virtual:${PLUGIN_NAME}-manifest`;
-var CACHE_DIR_NAME = `node_modules/.cache/${PLUGIN_NAME}`;
-
 // src/route-utils.ts
 var DYNAMIC_SEGMENT_RE = /\[([A-Za-z0-9_]+)\]/g;
 var CATCH_ALL_SEGMENT_RE = /\[\.\.\.([A-Za-z0-9_]+)\]/g;
-var ANY_PARAM_RE = /\[(?:\.\.\.)?([A-Za-z0-9_]+)\]/g;
+var OPTIONAL_CATCH_ALL_SEGMENT_RE = /\[\.\.\.([A-Za-z0-9_]+)\]\?/g;
+var ANY_PARAM_RE = /\[(?:\.\.\.)?([A-Za-z0-9_]+)\]\??/g;
 function getParamNames(relativeFromPagesDir) {
   return [...relativeFromPagesDir.matchAll(ANY_PARAM_RE)].map((m) => m[1]);
 }
 function isDynamicPage(relativeFromPagesDir) {
-  return /\[(?:\.\.\.)?[A-Za-z0-9_]+\]/.test(relativeFromPagesDir);
+  return /\[(?:\.\.\.)?[A-Za-z0-9_]+\]\??/.test(relativeFromPagesDir);
 }
 function toRoutePattern(relativeFromPagesDir) {
   const noExt = stripHtSuffix(toPosix(relativeFromPagesDir));
-  const raw = noExt.replace(/(^|\/)index$/i, "$1").replace(CATCH_ALL_SEGMENT_RE, "*:$1").replace(DYNAMIC_SEGMENT_RE, ":$1");
+  const raw = noExt.replace(/(^|\/)index$/i, "$1").replace(OPTIONAL_CATCH_ALL_SEGMENT_RE, "*?:$1").replace(CATCH_ALL_SEGMENT_RE, "*:$1").replace(DYNAMIC_SEGMENT_RE, ":$1");
   return normalizeRoutePath(raw || "/");
 }
 function fillParams(pattern, params) {
-  return pattern.replace(/\*:([A-Za-z0-9_]+)/g, (_, key) => {
+  return pattern.replace(/\*\?:([A-Za-z0-9_]+)/g, (_, key) => {
+    const value = params[key];
+    if (value == null || value === "") {
+      return "";
+    }
+    return String(value).split("/").map((part) => encodeURIComponent(part)).join("/");
+  }).replace(/\*:([A-Za-z0-9_]+)/g, (_, key) => {
     if (!(key in params)) {
-      throw new Error(`[${PLUGIN_NAME}] Missing catch-all route param "${key}"`);
+      throw new Error(`Missing catch-all route param "${key}"`);
     }
     return String(params[key]).split("/").map((part) => encodeURIComponent(part)).join("/");
   }).replace(/:([A-Za-z0-9_]+)/g, (_, key) => {
     if (!(key in params)) {
-      throw new Error(`[${PLUGIN_NAME}] Missing route param "${key}"`);
+      throw new Error(`Missing route param "${key}"`);
     }
     return encodeURIComponent(params[key]);
-  });
+  }).replace(/\/+/g, "/").replace(/\/$/, "") || "/";
 }
 function fileNameFromRoute(routePath, cleanUrls) {
   const normalized = normalizeRoutePath(routePath);
@@ -71,7 +72,9 @@ function expandStaticPaths(basePage, rows, cleanUrls) {
     const params = Object.fromEntries(
       Object.entries(row).map(([k, v]) => [k, String(v)])
     );
-    const routePath = fillParams(basePage.routePattern, params);
+    const routePath = normalizeRoutePath(
+      fillParams(basePage.routePattern, params)
+    );
     return {
       ...basePage,
       routePath,
@@ -84,22 +87,27 @@ function routeMatch(pattern, urlPath) {
   const a = normalizeRoutePath(pattern).split("/").filter(Boolean);
   const b = normalizeRoutePath(urlPath).split("/").filter(Boolean);
   const params = {};
-  for (let i = 0, j = 0; i < a.length; i++, j++) {
-    const seg = a[i];
-    if (seg.startsWith("*:")) {
-      const rest = b.slice(j);
+  for (let i = 0; i < a.length; i++) {
+    const patternSeg = a[i];
+    const urlSeg = b[i];
+    if (patternSeg.startsWith("*?:")) {
+      params[patternSeg.slice(3)] = i < b.length ? b.slice(i).map(decodeURIComponent).join("/") : "";
+      return params;
+    }
+    if (patternSeg.startsWith("*:")) {
+      const rest = b.slice(i);
       if (rest.length === 0) {
         return null;
       }
-      params[seg.slice(2)] = rest.map(decodeURIComponent).join("/");
+      params[patternSeg.slice(2)] = rest.map(decodeURIComponent).join("/");
       return params;
     }
-    if (j >= b.length) return null;
-    if (seg.startsWith(":")) {
-      params[seg.slice(1)] = decodeURIComponent(b[j]);
+    if (!urlSeg) return null;
+    if (patternSeg.startsWith(":")) {
+      params[patternSeg.slice(1)] = decodeURIComponent(urlSeg);
       continue;
     }
-    if (seg !== b[j]) return null;
+    if (patternSeg !== urlSeg) return null;
   }
   return a.length === b.length ? params : null;
 }
@@ -112,15 +120,30 @@ function compareRoutePriority(a, b) {
     const bb = bSegs[i];
     if (aa == null) return 1;
     if (bb == null) return -1;
+    const aOptionalCatchAll = aa.startsWith("*?:");
+    const bOptionalCatchAll = bb.startsWith("*?:");
+    if (aOptionalCatchAll !== bOptionalCatchAll) {
+      return aOptionalCatchAll ? 1 : -1;
+    }
     const aCatchAll = aa.startsWith("*:");
     const bCatchAll = bb.startsWith("*:");
-    if (aCatchAll !== bCatchAll) return aCatchAll ? 1 : -1;
+    if (aCatchAll !== bCatchAll) {
+      return aCatchAll ? 1 : -1;
+    }
     const aDynamic = aa.startsWith(":");
     const bDynamic = bb.startsWith(":");
-    if (aDynamic !== bDynamic) return aDynamic ? 1 : -1;
+    if (aDynamic !== bDynamic) {
+      return aDynamic ? 1 : -1;
+    }
   }
   return 0;
 }
+
+// src/constants.ts
+var PLUGIN_NAME = "vite-plugin-htjs-pages";
+var VIRTUAL_BUILD_ENTRY_ID = `\0${PLUGIN_NAME}:build-entry`;
+var VIRTUAL_MANIFEST_ID = `\0virtual:${PLUGIN_NAME}-manifest`;
+var CACHE_DIR_NAME = `node_modules/.cache/${PLUGIN_NAME}`;
 
 // src/discover.ts
 async function discoverEntryPages(root, options) {
