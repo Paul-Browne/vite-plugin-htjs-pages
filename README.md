@@ -46,6 +46,52 @@ JavaScript functions returning HTML.
 
 ------------------------------------------------------------------------
 
+## TL;DR
+
+Write:
+
+```js
+// src/index.ht.js
+
+import { fragment, html, body, head, title, h1 } from 'javascript-to-html'
+
+export default () => fragment(
+  '<!doctype html>',
+  html({lang: "en"},
+    head(
+      title("My website")
+    ),
+    body(
+      h1('Hello world')
+    )
+  )
+)
+```
+
+Run: 
+
+``` bash
+vite build
+```
+
+Get:
+
+```html
+<!-- dist/index.html -->
+ 
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>My website</title>
+  </head>
+  <body>
+    <h1>Hello world</h1>
+  </body>
+</html>
+```
+
+------------------------------------------------------------------------
+
 # Why this exists
 
 Modern static site tools are powerful, but they often introduce:
@@ -243,17 +289,17 @@ htPages({
 })
 ```
 
-  Option                Description
-  --------------------- --------------------------------------------
-  `pagesDir`            root directory for pages
-  `include`             page glob pattern
-  `exclude`             excluded patterns
-  `cleanUrls`           `/page/index.html` instead of `/page.html`
-  `renderConcurrency`   concurrent page renders
-  `renderBatchSize`     render batch size
-  `debug`               enable debug logging
-  `site`                base URL used for sitemap
-  `rss`                 configuration for RSS feed
+| Option | Description |
+|------|------|
+| `pagesDir` | root directory for pages |
+| `include` | page glob pattern |
+| `exclude` | excluded patterns |
+| `cleanUrls` | `/page/index.html` instead of `/page.html` |
+| `renderConcurrency` | concurrent page renders |
+| `renderBatchSize` | render batch size |
+| `debug` | enable debug logging |
+| `site` | base URL used for sitemap |
+| `rss` | configuration for RSS feed |
 
 ------------------------------------------------------------------------
 
@@ -364,11 +410,11 @@ This keeps memory usage stable during large builds.
 
 # Comparison
 
-  Tool                     Focus
-  ------------------------ --------------------------------
-  Astro                    component framework
-  Next.js                  SSR framework
-  vite-plugin-htjs-pages   minimal static HTML generation
+| Tool | Focus |
+|-----|-----|
+| Astro | component framework |
+| Next.js | SSR framework |
+| vite-plugin-htjs-pages | minimal static HTML generation |
 
 ------------------------------------------------------------------------
 
