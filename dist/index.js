@@ -440,6 +440,13 @@ function htPages(options = {}) {
       modulesByEntry,
       cleanUrls
     });
+    const notFoundPage = pages.find((p) => p.routePath === "/404");
+    if (notFoundPage && !pages.some((p) => p.fileName === "404.html")) {
+      pages.push({
+        ...notFoundPage,
+        fileName: "404.html"
+      });
+    }
     return { entries, bundlePath, modulesByEntry, pages };
   }
   return {
@@ -490,11 +497,13 @@ function htPages(options = {}) {
         );
       });
     },
-    async handleHotUpdate() {
-      if (server) {
+    async handleHotUpdate(ctx) {
+      if (!server) return;
+      const file = ctx.file;
+      if (file.endsWith(".ht.js") || file.includes("/templates/")) {
+        logDebug(options.debug, "reindex triggered by", file);
         await loadDevPages();
       }
-      return void 0;
     },
     async generateBundle(_, bundle) {
       const { modulesByEntry, pages } = await buildPagesPipeline();

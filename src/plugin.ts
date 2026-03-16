@@ -116,6 +116,16 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
       cleanUrls,
     });
 
+    // Ensure static hosts get a 404.html
+    const notFoundPage = pages.find((p) => p.routePath === '/404');
+
+    if (notFoundPage && !pages.some((p) => p.fileName === '404.html')) {
+      pages.push({
+        ...notFoundPage,
+        fileName: '404.html',
+      });
+    }   
+
     return { entries, bundlePath, modulesByEntry, pages };
   }
 
@@ -181,11 +191,18 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
       });
     },
 
-    async handleHotUpdate() {
-      if (server) {
+    async handleHotUpdate(ctx) {
+      if (!server) return;
+    
+      const file = ctx.file;
+    
+      if (
+        file.endsWith('.ht.js') ||
+        file.includes('/templates/')
+      ) {
+        logDebug(options.debug, 'reindex triggered by', file);
         await loadDevPages();
       }
-      return undefined;
     },
 
     async generateBundle(_, bundle) {
