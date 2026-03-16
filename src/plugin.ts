@@ -207,27 +207,28 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
 
     async generateBundle(_, bundle) {
       const { modulesByEntry, pages } = await buildPagesPipeline();
-
+    
       logDebug(options.debug, 'emitting pages', pages.map((p) => p.fileName));
-
+    
       const limit = pLimit(options.renderConcurrency ?? 8);
       const batchSize =
         options.renderBatchSize ??
         Math.max(options.renderConcurrency ?? 8, 32);
-
+    
       for (const batch of chunkArray(pages, batchSize)) {
         await Promise.all(
           batch.map((page) =>
             limit(async () => {
               const mod = modulesByEntry.get(page.entryPath);
+    
               if (!mod) {
                 throw new Error(
                   `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`,
                 );
               }
-
+    
               const html = await renderPage(page, mod, false);
-
+    
               this.emitFile({
                 type: 'asset',
                 fileName: options.mapOutputPath?.(page) ?? page.fileName,
@@ -237,7 +238,63 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
           ),
         );
       }
-
+    
+      // Generate sitemap.xml
+      const sitemapBase = options.site ?? '';
+      const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))]
+        .filter((route) => !route.includes(':') && !route.includes('*'));
+    
+      if (sitemapRoutes.length > 0) {
+        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    ${sitemapRoutes
+      .map((route) => `  <url><loc>${sitemapBase}${route}</loc></url>`)
+      .join('\n')}
+    </urlset>
+    `;
+    
+        this.emitFile({
+          type: 'asset',
+          fileName: 'sitemap.xml',
+          source: sitemap,
+        });
+      }
+    
+      // Generate rss.xml
+      if (options.rss?.site) {
+        const routePrefix = options.rss.routePrefix ?? '/blog';
+    
+        const rssItems = pages
+          .filter((page) => page.routePath.startsWith(routePrefix))
+          .map((page) => {
+            const url = `${options.rss!.site}${page.routePath}`;
+            return `  <item>
+        <title>${page.routePath}</title>
+        <link>${url}</link>
+        <guid>${url}</guid>
+      </item>`;
+          })
+          .join('\n');
+    
+        const rss = `<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+    <channel>
+      <title>${options.rss.title ?? PLUGIN_NAME}</title>
+      <link>${options.rss.site}</link>
+      <description>${options.rss.description ?? 'RSS feed'}</description>
+    ${rssItems}
+    </channel>
+    </rss>
+    `;
+    
+        this.emitFile({
+          type: 'asset',
+          fileName: 'rss.xml',
+          source: rss,
+        });
+      }
+    
+      // Remove the dummy virtual build entry chunk
       for (const [fileName, output] of Object.entries(bundle)) {
         if (
           output.type === 'chunk' &&
@@ -246,6 +303,7 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
           delete bundle[fileName];
         }
       }
-    },
+    }    
+
   };
 }

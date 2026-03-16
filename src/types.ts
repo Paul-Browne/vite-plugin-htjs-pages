@@ -45,4 +45,11 @@ export interface HtPagesPluginOptions {
   ssrPlugins?: RollupPlugin[];
   mapOutputPath?: (page: HtPageInfo) => string;
   debug?: boolean;
+  site?: string;
+  rss?: {
+    site: string;
+    title?: string;
+    description?: string;
+    routePrefix?: string;
+  };
 }
