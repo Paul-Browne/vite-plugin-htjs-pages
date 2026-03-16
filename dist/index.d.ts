@@ -38,6 +38,13 @@ interface HtPagesPluginOptions {
     ssrPlugins?: Plugin[];
     mapOutputPath?: (page: HtPageInfo) => string;
     debug?: boolean;
+    site?: string;
+    rss?: {
+        site: string;
+        title?: string;
+        description?: string;
+        routePrefix?: string;
+    };
 }
 
 declare function htPages(options?: HtPagesPluginOptions): Plugin$1;

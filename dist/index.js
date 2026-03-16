@@ -530,6 +530,46 @@ function htPages(options = {}) {
           )
         );
       }
+      const sitemapBase = options.site ?? "";
+      const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter((route) => !route.includes(":") && !route.includes("*"));
+      if (sitemapRoutes.length > 0) {
+        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    ${sitemapRoutes.map((route) => `  <url><loc>${sitemapBase}${route}</loc></url>`).join("\n")}
+    </urlset>
+    `;
+        this.emitFile({
+          type: "asset",
+          fileName: "sitemap.xml",
+          source: sitemap
+        });
+      }
+      if (options.rss?.site) {
+        const routePrefix = options.rss.routePrefix ?? "/blog";
+        const rssItems = pages.filter((page) => page.routePath.startsWith(routePrefix)).map((page) => {
+          const url = `${options.rss.site}${page.routePath}`;
+          return `  <item>
+        <title>${page.routePath}</title>
+        <link>${url}</link>
+        <guid>${url}</guid>
+      </item>`;
+        }).join("\n");
+        const rss = `<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+    <channel>
+      <title>${options.rss.title ?? PLUGIN_NAME}</title>
+      <link>${options.rss.site}</link>
+      <description>${options.rss.description ?? "RSS feed"}</description>
+    ${rssItems}
+    </channel>
+    </rss>
+    `;
+        this.emitFile({
+          type: "asset",
+          fileName: "rss.xml",
+          source: rss
+        });
+      }
       for (const [fileName, output] of Object.entries(bundle)) {
         if (output.type === "chunk" && output.facadeModuleId === VIRTUAL_BUILD_ENTRY_ID) {
           delete bundle[fileName];
