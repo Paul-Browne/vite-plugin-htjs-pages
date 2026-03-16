@@ -27,32 +27,46 @@ JavaScript functions returning HTML.
 
 # TL;DR
 
-Write this:
+Write:
 
 ```js
 // src/index.ht.js
-import { fragment, html, body, h1 } from "javascript-to-html"
+
+import { fragment, html, body, head, title, h1 } from 'javascript-to-html'
 
 export default () => fragment(
-  "<!doctype html>",
-  html(
+  '<!doctype html>',
+  html({lang: "en"},
+    head(
+      title("My website")
+    ),
     body(
-      h1("Hello world")
+      h1('Hello world')
     )
   )
 )
 ```
 
-Run:
+Run: 
 
-```bash
+``` bash
 vite build
 ```
 
 Get:
 
-```
-dist/index.html
+```html
+<!-- dist/index.html -->
+ 
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>My website</title>
+  </head>
+  <body>
+    <h1>Hello world</h1>
+  </body>
+</html>
 ```
 
 ---
