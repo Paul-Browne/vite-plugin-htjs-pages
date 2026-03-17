@@ -10,9 +10,7 @@ export default defineConfig({
   splitting: false,
   external: [
     'vite',
-    'rollup',
     'fast-glob',
-    'p-limit',
-    '@rollup/plugin-node-resolve'
+    'p-limit'
   ],
 });

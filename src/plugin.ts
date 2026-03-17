@@ -1,4 +1,5 @@
-// import path from 'node:path';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import pLimit from 'p-limit';
 import type { Plugin, ViteDevServer } from 'vite';
@@ -25,6 +26,21 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 async function importPageModule(entryPath: string): Promise<HtPageModule> {
   const mod = await import(pathToFileURL(entryPath).href + `?t=${Date.now()}`);
   return mod as HtPageModule;
+}
+
+async function warnIfNotEsm(root: string): Promise<void> {
+  try {
+    const pkgPath = path.join(root, 'package.json');
+    const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+
+    if (pkg.type !== 'module') {
+      console.warn(
+        `[${PLUGIN_NAME}] Tip: add "type": "module" to package.json to avoid Node ESM warnings.`,
+      );
+    }
+  } catch {
+      // ignore
+  }
 }
 
 export function htPages(options: HtPagesPluginOptions = {}): Plugin {
@@ -124,6 +140,7 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
 
     configResolved(resolved) {
       root = resolved.root;
+      void warnIfNotEsm(root);
     },
 
     async buildStart() {
@@ -163,6 +180,7 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
       }
 
       logDebug(options.debug, 'page updated', ctx.file);
+
       await loadDevPages();
       return undefined;
     },

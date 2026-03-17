@@ -1,4 +1,6 @@
 // src/plugin.ts
+import path3 from "path";
+import fs from "fs/promises";
 import { pathToFileURL } from "url";
 import pLimit from "p-limit";
 
@@ -345,6 +347,18 @@ async function importPageModule(entryPath) {
   const mod = await import(pathToFileURL(entryPath).href + `?t=${Date.now()}`);
   return mod;
 }
+async function warnIfNotEsm(root) {
+  try {
+    const pkgPath = path3.join(root, "package.json");
+    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf8"));
+    if (pkg.type !== "module") {
+      console.warn(
+        `[${PLUGIN_NAME}] Tip: add "type": "module" to package.json to avoid Node ESM warnings.`
+      );
+    }
+  } catch {
+  }
+}
 function htPages(options = {}) {
   let root = process.cwd();
   let server = null;
@@ -421,6 +435,7 @@ function htPages(options = {}) {
     },
     configResolved(resolved) {
       root = resolved.root;
+      void warnIfNotEsm(root);
     },
     async buildStart() {
       const entries = await discoverEntryPages(root, options);
@@ -534,8 +549,8 @@ ${rssItems}
 }
 
 // src/fetch-cache.ts
-import fs from "fs/promises";
-import path3 from "path";
+import fs2 from "fs/promises";
+import path4 from "path";
 import { createHash } from "crypto";
 function createDefaultCacheKey(input, init) {
   const raw = JSON.stringify({
@@ -547,7 +562,7 @@ function createDefaultCacheKey(input, init) {
   return createHash("sha256").update(raw).digest("hex");
 }
 function getCacheFilePath(cacheKey) {
-  return path3.join(process.cwd(), CACHE_DIR_NAME, "fetch", `${cacheKey}.json`);
+  return path4.join(process.cwd(), CACHE_DIR_NAME, "fetch", `${cacheKey}.json`);
 }
 async function fetchAndCache(input, init, options = {}) {
   const maxAge = options.maxAge ?? 60 * 60;
@@ -557,10 +572,10 @@ async function fetchAndCache(input, init, options = {}) {
   }
   const cacheKey = options.cacheKey ?? createDefaultCacheKey(input, init);
   const filePath = getCacheFilePath(cacheKey);
-  await fs.mkdir(path3.dirname(filePath), { recursive: true });
+  await fs2.mkdir(path4.dirname(filePath), { recursive: true });
   if (!options.forceRefresh) {
     try {
-      const raw = await fs.readFile(filePath, "utf8");
+      const raw = await fs2.readFile(filePath, "utf8");
       const cached = JSON.parse(raw);
       const ageSeconds = (Date.now() - cached.timestamp) / 1e3;
       if (ageSeconds <= maxAge) {
@@ -582,7 +597,7 @@ async function fetchAndCache(input, init, options = {}) {
     headers: [...res.headers.entries()],
     body
   };
-  await fs.writeFile(filePath, JSON.stringify(record), "utf8");
+  await fs2.writeFile(filePath, JSON.stringify(record), "utf8");
   return new Response(body, {
     status: res.status,
     statusText: res.statusText,
