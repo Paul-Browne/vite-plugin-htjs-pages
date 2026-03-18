@@ -538,7 +538,58 @@ function htPages(options = {}) {
             fileName: "404.html",
             source: html
           });
-          logDebug(options.debug, "generated 404.html");
+          logDebug(options.debug, "generated 404.html from user page");
+        } else {
+          const default404 = `<!doctype html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>404 - Page Not Found</title>
+            <style>
+              :root {
+                color-scheme: light dark;
+              }
+              body {
+                margin: 0;
+                font-family: system-ui, sans-serif;
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                padding: 2rem;
+              }
+              main {
+                max-width: 40rem;
+                text-align: center;
+              }
+              h1 {
+                font-size: 3rem;
+                margin: 0 0 1rem;
+              }
+              p {
+                margin: 0.5rem 0;
+                line-height: 1.5;
+              }
+              a {
+                color: inherit;
+              }
+            </style>
+          </head>
+          <body>
+            <main>
+              <h1>404</h1>
+              <p>Page not found.</p>
+              <p><a href="/">Go back home</a></p>
+            </main>
+          </body>
+        </html>
+        `;
+          this.emitFile({
+            type: "asset",
+            fileName: "404.html",
+            source: default404
+          });
+          logDebug(options.debug, "generated default 404.html");
         }
         const sitemapBase = options.site ?? "";
         const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter(
