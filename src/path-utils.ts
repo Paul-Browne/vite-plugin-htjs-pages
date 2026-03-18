@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 export function toPosix(value: string): string {
-  return value.split(path.sep).join('/');
+  return value.replace(/\\/g, '/');
 }
 
 export function normalizeFsPath(value: string): string {

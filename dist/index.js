@@ -1,7 +1,4 @@
 // src/plugin.ts
-import path3 from "path";
-import fs from "fs/promises";
-import { pathToFileURL } from "url";
 import pLimit from "p-limit";
 
 // src/discover.ts
@@ -10,7 +7,7 @@ import path2 from "path";
 // src/path-utils.ts
 import path from "path";
 function toPosix(value) {
-  return value.split(path.sep).join("/");
+  return value.replace(/\\/g, "/");
 }
 function normalizeFsPath(value) {
   return path.normalize(value);
@@ -157,7 +154,7 @@ async function discoverEntryPages(root, options) {
   const fgModule = await import("fast-glob");
   const fg = fgModule.default ?? fgModule;
   const pagesDir = options.pagesDir ?? "src";
-  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js", ".html.js"];
+  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js", ".html.js", ".ht.ts", ".html.ts"];
   const include = Array.isArray(options.include) ? options.include : options.include ? [options.include] : buildDefaultIncludeGlobs(pagesDir, pageExtensions);
   const exclude = Array.isArray(options.exclude) ? options.exclude : options.exclude ? [options.exclude] : [];
   const pagesRoot = normalizeFsPath(path2.join(root, pagesDir));
@@ -291,6 +288,48 @@ function installDevServer(args) {
   });
 }
 
+// src/module-loader.ts
+import path3 from "path";
+import { createServer } from "vite";
+var buildServer = null;
+async function createPageModuleLoader(args) {
+  const { mode, root, server } = args;
+  if (mode === "dev") {
+    if (!server) {
+      throw new Error("[vite-plugin-html-pages] dev server not available");
+    }
+    return async (_entryPath, relativePath) => {
+      const mod = await server.ssrLoadModule(`/${relativePath}`);
+      return mod;
+    };
+  }
+  if (!buildServer) {
+    const config = {
+      root,
+      logLevel: "error",
+      appType: "custom",
+      server: {
+        middlewareMode: true
+      },
+      ssr: {
+        noExternal: true
+      }
+    };
+    buildServer = await createServer(config);
+  }
+  return async (entryPath) => {
+    const relativePath = "/" + path3.relative(root, entryPath).replace(/\\/g, "/");
+    const mod = await buildServer.ssrLoadModule(relativePath);
+    return mod;
+  };
+}
+async function closePageModuleLoader() {
+  if (buildServer) {
+    await buildServer.close();
+    buildServer = null;
+  }
+}
+
 // src/page-index.ts
 async function buildPageIndex(args) {
   const { entries, modulesByEntry, cleanUrls } = args;
@@ -345,22 +384,6 @@ function chunkArray(items, size) {
   }
   return out;
 }
-async function importPageModule(entryPath) {
-  const mod = await import(pathToFileURL(entryPath).href + `?t=${Date.now()}`);
-  return mod;
-}
-async function warnIfNotEsm(root) {
-  try {
-    const pkgPath = path3.join(root, "package.json");
-    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf8"));
-    if (pkg.type !== "module") {
-      console.warn(
-        `[${PLUGIN_NAME}] Tip: add "type": "module" to package.json to avoid Node ESM warnings.`
-      );
-    }
-  } catch {
-  }
-}
 function htPages(options = {}) {
   let root = process.cwd();
   let server = null;
@@ -379,10 +402,13 @@ function htPages(options = {}) {
       entries.map((e) => e.relativePath)
     );
     if (!server) return [];
+    const loadModule = await createPageModuleLoader({
+      mode: "dev",
+      root,
+      server
+    });
     for (const entry of entries) {
-      const mod = await server.ssrLoadModule(
-        `/${entry.relativePath}`
-      );
+      const mod = await loadModule(entry.entryPath, entry.relativePath);
       modulesByEntry.set(entry.entryPath, mod);
     }
     devPages = await buildPageIndex({
@@ -400,8 +426,12 @@ function htPages(options = {}) {
   async function buildPagesPipeline() {
     const entries = await discoverEntryPages(root, options);
     const modulesByEntry = /* @__PURE__ */ new Map();
+    const loadModule = await createPageModuleLoader({
+      mode: "build",
+      root
+    });
     for (const entry of entries) {
-      const mod = await importPageModule(entry.entryPath);
+      const mod = await loadModule(entry.entryPath, entry.relativePath);
       modulesByEntry.set(entry.entryPath, mod);
     }
     const pages = await buildPageIndex({
@@ -437,7 +467,6 @@ function htPages(options = {}) {
     },
     configResolved(resolved) {
       root = resolved.root;
-      void warnIfNotEsm(root);
     },
     async buildStart() {
       const entries = await discoverEntryPages(root, options);
@@ -468,61 +497,62 @@ function htPages(options = {}) {
       return void 0;
     },
     async generateBundle(_, bundle) {
-      const { modulesByEntry, pages } = await buildPagesPipeline();
-      logDebug(
-        options.debug,
-        "emitting pages",
-        pages.map((p) => p.fileName)
-      );
-      const limit = pLimit(options.renderConcurrency ?? 8);
-      const batchSize = options.renderBatchSize ?? Math.max(options.renderConcurrency ?? 8, 32);
-      for (const batch of chunkArray(pages, batchSize)) {
-        await Promise.all(
-          batch.map(
-            (page) => limit(async () => {
-              const mod = modulesByEntry.get(page.entryPath);
-              if (!mod) {
-                throw new Error(
-                  `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`
-                );
-              }
-              const html = await renderPage(page, mod, false);
-              this.emitFile({
-                type: "asset",
-                fileName: options.mapOutputPath?.(page) ?? page.fileName,
-                source: html
-              });
-            })
-          )
+      try {
+        const { modulesByEntry, pages } = await buildPagesPipeline();
+        logDebug(
+          options.debug,
+          "emitting pages",
+          pages.map((p) => p.fileName)
         );
-      }
-      const sitemapBase = options.site ?? "";
-      const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter(
-        (route) => !route.includes(":") && !route.includes("*")
-      );
-      if (sitemapRoutes.length > 0) {
-        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+        const limit = pLimit(options.renderConcurrency ?? 8);
+        const batchSize = options.renderBatchSize ?? Math.max(options.renderConcurrency ?? 8, 32);
+        for (const batch of chunkArray(pages, batchSize)) {
+          await Promise.all(
+            batch.map(
+              (page) => limit(async () => {
+                const mod = modulesByEntry.get(page.entryPath);
+                if (!mod) {
+                  throw new Error(
+                    `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`
+                  );
+                }
+                const html = await renderPage(page, mod, false);
+                this.emitFile({
+                  type: "asset",
+                  fileName: options.mapOutputPath?.(page) ?? page.fileName,
+                  source: html
+                });
+              })
+            )
+          );
+        }
+        const sitemapBase = options.site ?? "";
+        const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter(
+          (route) => !route.includes(":") && !route.includes("*")
+        );
+        if (sitemapRoutes.length > 0) {
+          const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${sitemapRoutes.map((route) => `  <url><loc>${sitemapBase}${route}</loc></url>`).join("\n")}
 </urlset>
 `;
-        this.emitFile({
-          type: "asset",
-          fileName: "sitemap.xml",
-          source: sitemap
-        });
-      }
-      if (options.rss?.site) {
-        const routePrefix = options.rss.routePrefix ?? "/blog";
-        const rssItems = pages.filter((page) => page.routePath.startsWith(routePrefix)).map((page) => {
-          const url = `${options.rss.site}${page.routePath}`;
-          return `  <item>
+          this.emitFile({
+            type: "asset",
+            fileName: "sitemap.xml",
+            source: sitemap
+          });
+        }
+        if (options.rss?.site) {
+          const routePrefix = options.rss.routePrefix ?? "/blog";
+          const rssItems = pages.filter((page) => page.routePath.startsWith(routePrefix)).map((page) => {
+            const url = `${options.rss.site}${page.routePath}`;
+            return `  <item>
     <title>${page.routePath}</title>
     <link>${url}</link>
     <guid>${url}</guid>
   </item>`;
-        }).join("\n");
-        const rss = `<?xml version="1.0" encoding="UTF-8"?>
+          }).join("\n");
+          const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
   <title>${options.rss.title ?? PLUGIN_NAME}</title>
@@ -532,23 +562,26 @@ ${rssItems}
 </channel>
 </rss>
 `;
-        this.emitFile({
-          type: "asset",
-          fileName: "rss.xml",
-          source: rss
-        });
-      }
-      for (const [fileName, output] of Object.entries(bundle)) {
-        if (output.type === "chunk" && output.facadeModuleId === VIRTUAL_BUILD_ENTRY_ID) {
-          delete bundle[fileName];
+          this.emitFile({
+            type: "asset",
+            fileName: "rss.xml",
+            source: rss
+          });
         }
+        for (const [fileName, output] of Object.entries(bundle)) {
+          if (output.type === "chunk" && output.facadeModuleId === VIRTUAL_BUILD_ENTRY_ID) {
+            delete bundle[fileName];
+          }
+        }
+      } finally {
+        await closePageModuleLoader();
       }
     }
   };
 }
 
 // src/fetch-cache.ts
-import fs2 from "fs/promises";
+import fs from "fs/promises";
 import path4 from "path";
 import { createHash } from "crypto";
 var memoryCache = /* @__PURE__ */ new Map();
@@ -600,10 +633,10 @@ async function fetchAndCache(input, init, options = {}) {
   }
   const filePath = getCacheFilePath(cacheKey);
   if (cacheMode === "fs") {
-    await fs2.mkdir(path4.dirname(filePath), { recursive: true });
+    await fs.mkdir(path4.dirname(filePath), { recursive: true });
     if (!options.forceRefresh) {
       try {
-        const raw = await fs2.readFile(filePath, "utf8");
+        const raw = await fs.readFile(filePath, "utf8");
         const cached = JSON.parse(raw);
         if (isFresh(cached, maxAge)) {
           return toResponse(cached);
@@ -624,7 +657,7 @@ async function fetchAndCache(input, init, options = {}) {
   if (cacheMode === "memory") {
     memoryCache.set(cacheKey, record);
   } else if (cacheMode === "fs") {
-    await fs2.writeFile(filePath, JSON.stringify(record), "utf8");
+    await fs.writeFile(filePath, JSON.stringify(record), "utf8");
   }
   return new Response(body, {
     status: res.status,

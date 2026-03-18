@@ -1,19 +1,14 @@
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
 import pLimit from 'p-limit';
 import type { Plugin, ViteDevServer } from 'vite';
 
 import { discoverEntryPages } from './discover';
 import { installDevServer } from './dev-server';
+import { createPageModuleLoader, closePageModuleLoader } from './module-loader';
 import { buildPageIndex } from './page-index';
 import { renderPage } from './render-runtime';
 
 import type { HtPageInfo, HtPageModule, HtPagesPluginOptions } from './types';
-import {
-  PLUGIN_NAME,
-  VIRTUAL_BUILD_ENTRY_ID,
-} from './constants';
+import { PLUGIN_NAME, VIRTUAL_BUILD_ENTRY_ID } from './constants';
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -21,26 +16,6 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
-}
-
-async function importPageModule(entryPath: string): Promise<HtPageModule> {
-  const mod = await import(pathToFileURL(entryPath).href + `?t=${Date.now()}`);
-  return mod as HtPageModule;
-}
-
-async function warnIfNotEsm(root: string): Promise<void> {
-  try {
-    const pkgPath = path.join(root, 'package.json');
-    const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
-
-    if (pkg.type !== 'module') {
-      console.warn(
-        `[${PLUGIN_NAME}] Tip: add "type": "module" to package.json to avoid Node ESM warnings.`,
-      );
-    }
-  } catch {
-    // ignore
-  }
 }
 
 export function htPages(options: HtPagesPluginOptions = {}): Plugin {
@@ -67,11 +42,14 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
 
     if (!server) return [];
 
-    for (const entry of entries) {
-      const mod = (await server.ssrLoadModule(
-        `/${entry.relativePath}`,
-      )) as HtPageModule;
+    const loadModule = await createPageModuleLoader({
+      mode: 'dev',
+      root,
+      server,
+    });
 
+    for (const entry of entries) {
+      const mod = await loadModule(entry.entryPath, entry.relativePath);
       modulesByEntry.set(entry.entryPath, mod);
     }
 
@@ -94,8 +72,13 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
     const entries = await discoverEntryPages(root, options);
     const modulesByEntry = new Map<string, HtPageModule>();
 
+    const loadModule = await createPageModuleLoader({
+      mode: 'build',
+      root,
+    });
+
     for (const entry of entries) {
-      const mod = await importPageModule(entry.entryPath);
+      const mod = await loadModule(entry.entryPath, entry.relativePath);
       modulesByEntry.set(entry.entryPath, mod);
     }
 
@@ -140,7 +123,6 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
 
     configResolved(resolved) {
       root = resolved.root;
-      void warnIfNotEsm(root);
     },
 
     async buildStart() {
@@ -182,86 +164,90 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
     },
 
     async generateBundle(_, bundle) {
-      const { modulesByEntry, pages } = await buildPagesPipeline();
+      try {
+        const { modulesByEntry, pages } = await buildPagesPipeline();
 
-      logDebug(
-        options.debug,
-        'emitting pages',
-        pages.map((p) => p.fileName),
-      );
-
-      const limit = pLimit(options.renderConcurrency ?? 8);
-      const batchSize =
-        options.renderBatchSize ??
-        Math.max(options.renderConcurrency ?? 8, 32);
-
-      for (const batch of chunkArray(pages, batchSize)) {
-        await Promise.all(
-          batch.map((page) =>
-            limit(async () => {
-              const mod = modulesByEntry.get(page.entryPath);
-              if (!mod) {
-                throw new Error(
-                  `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`,
-                );
-              }
-
-              const html = await renderPage(page, mod, false);
-
-              this.emitFile({
-                type: 'asset',
-                fileName: options.mapOutputPath?.(page) ?? page.fileName,
-                source: html,
-              });
-            }),
-          ),
+        logDebug(
+          options.debug,
+          'emitting pages',
+          pages.map((p) => p.fileName),
         );
-      }
 
-      const sitemapBase = options.site ?? '';
-      const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter(
-        (route) => !route.includes(':') && !route.includes('*'),
-      );
+        const limit = pLimit(options.renderConcurrency ?? 8);
+        const batchSize =
+          options.renderBatchSize ??
+          Math.max(options.renderConcurrency ?? 8, 32);
 
-      if (sitemapRoutes.length > 0) {
-        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapRoutes
-          .map((route) => `  <url><loc>${sitemapBase}${route}</loc></url>`)
-          .join('\n')}\n</urlset>\n`;
+        for (const batch of chunkArray(pages, batchSize)) {
+          await Promise.all(
+            batch.map((page) =>
+              limit(async () => {
+                const mod = modulesByEntry.get(page.entryPath);
+                if (!mod) {
+                  throw new Error(
+                    `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`,
+                  );
+                }
 
-        this.emitFile({
-          type: 'asset',
-          fileName: 'sitemap.xml',
-          source: sitemap,
-        });
-      }
+                const html = await renderPage(page, mod, false);
 
-      if (options.rss?.site) {
-        const routePrefix = options.rss.routePrefix ?? '/blog';
-
-        const rssItems = pages
-          .filter((page) => page.routePath.startsWith(routePrefix))
-          .map((page) => {
-            const url = `${options.rss!.site}${page.routePath}`;
-            return `  <item>\n    <title>${page.routePath}</title>\n    <link>${url}</link>\n    <guid>${url}</guid>\n  </item>`;
-          })
-          .join('\n');
-
-        const rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n  <title>${options.rss.title ?? PLUGIN_NAME}</title>\n  <link>${options.rss.site}</link>\n  <description>${options.rss.description ?? 'RSS feed'}</description>\n${rssItems}\n</channel>\n</rss>\n`;
-
-        this.emitFile({
-          type: 'asset',
-          fileName: 'rss.xml',
-          source: rss,
-        });
-      }
-
-      for (const [fileName, output] of Object.entries(bundle)) {
-        if (
-          output.type === 'chunk' &&
-          output.facadeModuleId === VIRTUAL_BUILD_ENTRY_ID
-        ) {
-          delete bundle[fileName];
+                this.emitFile({
+                  type: 'asset',
+                  fileName: options.mapOutputPath?.(page) ?? page.fileName,
+                  source: html,
+                });
+              }),
+            ),
+          );
         }
+
+        const sitemapBase = options.site ?? '';
+        const sitemapRoutes = [...new Set(pages.map((p) => p.routePath))].filter(
+          (route) => !route.includes(':') && !route.includes('*'),
+        );
+
+        if (sitemapRoutes.length > 0) {
+          const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapRoutes
+            .map((route) => `  <url><loc>${sitemapBase}${route}</loc></url>`)
+            .join('\n')}\n</urlset>\n`;
+
+          this.emitFile({
+            type: 'asset',
+            fileName: 'sitemap.xml',
+            source: sitemap,
+          });
+        }
+
+        if (options.rss?.site) {
+          const routePrefix = options.rss.routePrefix ?? '/blog';
+
+          const rssItems = pages
+            .filter((page) => page.routePath.startsWith(routePrefix))
+            .map((page) => {
+              const url = `${options.rss!.site}${page.routePath}`;
+              return `  <item>\n    <title>${page.routePath}</title>\n    <link>${url}</link>\n    <guid>${url}</guid>\n  </item>`;
+            })
+            .join('\n');
+
+          const rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n  <title>${options.rss.title ?? PLUGIN_NAME}</title>\n  <link>${options.rss.site}</link>\n  <description>${options.rss.description ?? 'RSS feed'}</description>\n${rssItems}\n</channel>\n</rss>\n`;
+
+          this.emitFile({
+            type: 'asset',
+            fileName: 'rss.xml',
+            source: rss,
+          });
+        }
+
+        for (const [fileName, output] of Object.entries(bundle)) {
+          if (
+            output.type === 'chunk' &&
+            output.facadeModuleId === VIRTUAL_BUILD_ENTRY_ID
+          ) {
+            delete bundle[fileName];
+          }
+        }
+      } finally {
+        await closePageModuleLoader();
       }
     },
   };
