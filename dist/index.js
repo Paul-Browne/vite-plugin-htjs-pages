@@ -366,7 +366,6 @@ function htPages(options = {}) {
   let server = null;
   let devPages = [];
   const cleanUrls = options.cleanUrls ?? true;
-  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js"];
   function logDebug(enabled, ...args) {
     if (!enabled) return;
     console.log(`[${PLUGIN_NAME}]`, ...args);

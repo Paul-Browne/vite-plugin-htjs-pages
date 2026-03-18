@@ -49,9 +49,6 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
   let devPages: HtPageInfo[] = [];
 
   const cleanUrls = options.cleanUrls ?? true;
-  const pageExtensions = options.pageExtensions?.length
-    ? options.pageExtensions
-    : ['.ht.js'];
 
   function logDebug(enabled: boolean | undefined, ...args: unknown[]) {
     if (!enabled) return;
