@@ -30,13 +30,11 @@ export async function createPageModuleLoader(args: {
   if (!buildServer) {
     const config: InlineConfig = {
       root,
+      configFile: false,
       logLevel: 'error',
       appType: 'custom',
       server: {
         middlewareMode: true,
-      },
-      ssr: {
-        noExternal: true,
       },
     };
 
@@ -44,7 +42,9 @@ export async function createPageModuleLoader(args: {
   }
 
   return async (entryPath) => {
-    const relativePath = '/' + path.relative(root, entryPath).replace(/\\/g, '/');
+    const relativePath =
+      '/' + path.relative(root, entryPath).replace(/\\/g, '/');
+
     const mod = await buildServer!.ssrLoadModule(relativePath);
     return mod as HtPageModule;
   };

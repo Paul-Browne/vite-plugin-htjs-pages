@@ -306,13 +306,11 @@ async function createPageModuleLoader(args) {
   if (!buildServer) {
     const config = {
       root,
+      configFile: false,
       logLevel: "error",
       appType: "custom",
       server: {
         middlewareMode: true
-      },
-      ssr: {
-        noExternal: true
       }
     };
     buildServer = await createServer(config);
