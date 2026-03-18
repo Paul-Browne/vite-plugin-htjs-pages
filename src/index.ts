@@ -1,5 +1,5 @@
-export { htPages } from './plugin';
-export { fetchAndCache } from './fetch-cache';
+export { htPages as default } from './plugin';
+export { fetchWithCache } from './fetch-cache';
 
 export type {
   HtPageInfo,
@@ -9,4 +9,4 @@ export type {
   StaticParamRecord,
 } from './types';
 
-export type { FetchAndCacheOptions } from './fetch-cache';
+export type { FetchWithCacheOptions } from './fetch-cache';

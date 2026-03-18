@@ -53,12 +53,12 @@ interface HtPagesPluginOptions {
 declare function htPages(options?: HtPagesPluginOptions): Plugin$1;
 
 type FetchCacheMode = 'auto' | 'memory' | 'fs' | 'none';
-interface FetchAndCacheOptions {
+interface FetchWithCacheOptions {
     maxAge?: number;
     cacheKey?: string;
     forceRefresh?: boolean;
     cache?: FetchCacheMode;
 }
-declare function fetchAndCache(input: RequestInfo | URL, init?: RequestInit, options?: FetchAndCacheOptions): Promise<Response>;
+declare function fetchWithCache(input: RequestInfo | URL, init?: RequestInit, options?: FetchWithCacheOptions): Promise<Response>;
 
-export { type FetchAndCacheOptions, type HtPageInfo, type HtPageModule, type HtPageRenderContext, type HtPagesPluginOptions, type StaticParamRecord, fetchAndCache, htPages };
+export { type FetchWithCacheOptions, type HtPageInfo, type HtPageModule, type HtPageRenderContext, type HtPagesPluginOptions, type StaticParamRecord, htPages as default, fetchWithCache };

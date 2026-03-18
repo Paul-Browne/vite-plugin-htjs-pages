@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { CACHE_DIR_NAME } from './constants';
 
 export type FetchCacheMode = 'auto' | 'memory' | 'fs' | 'none';
-export interface FetchAndCacheOptions {
+export interface FetchWithCacheOptions {
   maxAge?: number;
   cacheKey?: string;
   forceRefresh?: boolean;
@@ -70,10 +70,10 @@ export function deleteMemoryFetchCache(cacheKey: string): void {
   memoryCache.delete(cacheKey);
 }
 
-export async function fetchAndCache(
+export async function fetchWithCache(
   input: RequestInfo | URL,
   init?: RequestInit,
-  options: FetchAndCacheOptions = {},
+  options: FetchWithCacheOptions = {},
 ): Promise<Response> {
   const maxAge = options.maxAge ?? 60 * 60;
   const method = (init?.method ?? 'GET').toUpperCase();

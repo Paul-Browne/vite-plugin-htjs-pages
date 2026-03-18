@@ -133,10 +133,10 @@ while keeping pages as **simple JavaScript functions that return HTML**.
 
 ```js
 import { defineConfig } from "vite"
-import { htPages } from "vite-plugin-html-pages"
+import htmlPages from "vite-plugin-html-pages"
 
 export default defineConfig({
-  plugins: [htPages()]
+  plugins: [htmlPages()]
 })
 ```
 
@@ -362,14 +362,14 @@ export async function data({ params }) {
 
 # Caching
 
-Use `fetchAndCache` for HTTP requests during static generation. Responses are
+Use `fetchWithCache` for HTTP requests during static generation. Responses are
 cached to avoid repeated network calls across page builds.
 
 ```js
-import { fetchAndCache } from 'vite-plugin-html-pages'
+import { fetchWithCache } from 'vite-plugin-html-pages'
 
 export async function data({ params }) {
-  const res = await fetchAndCache(
+  const res = await fetchWithCache(
     `https://api.example.com/posts/${params.slug}`,
     {
       // fetch API options
@@ -443,7 +443,7 @@ export default (...content) => fragment(
 Enable debug logging when troubleshooting.
 
 ```js
-htPages({
+htmlPages({
   debug: true
 })
 ```
@@ -472,7 +472,7 @@ dist/sitemap.xml
 # Optional RSS Feed
 
 ```js
-htPages({
+htmlPages({
   rss: {
     site: "https://example.com",
     title: "My Blog",
@@ -495,7 +495,7 @@ dist/rss.xml
 Large sites can increase concurrency:
 
 ```js
-htPages({
+htmlPages({
   renderConcurrency: 16,
   renderBatchSize: 128
 })

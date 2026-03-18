@@ -614,7 +614,7 @@ function isFresh(cached, maxAgeSeconds) {
   const ageSeconds = (Date.now() - cached.timestamp) / 1e3;
   return ageSeconds <= maxAgeSeconds;
 }
-async function fetchAndCache(input, init, options = {}) {
+async function fetchWithCache(input, init, options = {}) {
   const maxAge = options.maxAge ?? 60 * 60;
   const method = (init?.method ?? "GET").toUpperCase();
   if (method !== "GET" && !options.cacheKey) {
@@ -666,7 +666,7 @@ async function fetchAndCache(input, init, options = {}) {
   });
 }
 export {
-  fetchAndCache,
-  htPages
+  htPages as default,
+  fetchWithCache
 };
 //# sourceMappingURL=index.js.map
