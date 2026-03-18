@@ -1,20 +1,30 @@
 import path from 'node:path';
 
-export function toPosix(p: string): string {
-  return p.split(path.sep).join('/');
+export function toPosix(value: string): string {
+  return value.split(path.sep).join('/');
 }
 
-export function stripHtSuffix(file: string): string {
-  return file.replace(/\.ht\.js$/i, '');
+export function normalizeFsPath(value: string): string {
+  return path.normalize(value);
 }
 
-export function normalizeRoutePath(p: string): string {
-  let out = p.startsWith('/') ? p : `/${p}`;
-  out = out.replace(/\/+/g, '/');
-  if (out !== '/' && out.endsWith('/')) out = out.slice(0, -1);
-  return out;
+export function normalizeRoutePath(value: string): string {
+  const normalized = toPosix(value).replace(/\/+/g, '/');
+  if (!normalized || normalized === '/') return '/';
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
-export function normalizeFsPath(p: string): string {
-  return toPosix(path.resolve(p));
+export function stripPageSuffix(
+  filePath: string,
+  extensions: string[],
+): string {
+  const normalized = toPosix(filePath);
+
+  const match = [...extensions]
+    .sort((a, b) => b.length - a.length)
+    .find((ext) => normalized.endsWith(ext));
+
+  if (!match) return normalized;
+
+  return normalized.slice(0, -match.length);
 }

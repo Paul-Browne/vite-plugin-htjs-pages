@@ -34,6 +34,7 @@ interface HtPagesPluginOptions {
     include?: string | string[];
     exclude?: string | string[];
     pagesDir?: string;
+    pageExtensions?: string[];
     renderConcurrency?: number;
     renderBatchSize?: number;
     cleanUrls?: boolean;

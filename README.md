@@ -1,8 +1,8 @@
-# vite-plugin-htjs-pages
+# vite-plugin-html-pages
 
-[![npm version](https://img.shields.io/npm/v/vite-plugin-htjs-pages.svg)](https://www.npmjs.com/package/vite-plugin-htjs-pages)
-[![npm downloads](https://img.shields.io/npm/dm/vite-plugin-htjs-pages.svg)](https://www.npmjs.com/package/vite-plugin-htjs-pages)
-[![license](https://img.shields.io/npm/l/vite-plugin-htjs-pages.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/vite-plugin-html-pages.svg)](https://www.npmjs.com/package/vite-plugin-html-pages)
+[![npm downloads](https://img.shields.io/npm/dm/vite-plugin-html-pages.svg)](https://www.npmjs.com/package/vite-plugin-html-pages)
+[![license](https://img.shields.io/npm/l/vite-plugin-html-pages.svg)](LICENSE)
 [![vite](https://img.shields.io/badge/vite-plugin-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 
 Minimal **static site generation for Vite** using JavaScript files that return HTML.
@@ -94,7 +94,7 @@ Get:
 # Installation
 
 ```bash
-npm install vite-plugin-htjs-pages javascript-to-html
+npm install vite-plugin-html-pages javascript-to-html
 ```
 
 ---
@@ -114,7 +114,7 @@ Sometimes you just want to:
 -   organize pages in folders
 -   generate static files
 
-`vite-plugin-htjs-pages` exists for that use case.
+`vite-plugin-html-pages` exists for that use case.
 
 It gives you:
 
@@ -133,7 +133,7 @@ while keeping pages as **simple JavaScript functions that return HTML**.
 
 ```js
 import { defineConfig } from "vite"
-import { htPages } from "vite-plugin-htjs-pages"
+import { htPages } from "vite-plugin-html-pages"
 
 export default defineConfig({
   plugins: [htPages()]
@@ -366,7 +366,7 @@ Use `fetchAndCache` for HTTP requests during static generation. Responses are
 cached to avoid repeated network calls across page builds.
 
 ```js
-import { fetchAndCache } from 'vite-plugin-htjs-pages'
+import { fetchAndCache } from 'vite-plugin-html-pages'
 
 export async function data({ params }) {
   const res = await fetchAndCache(
@@ -394,7 +394,7 @@ export async function data({ params }) {
 
 - **`auto`** (default): memory in dev, filesystem in production
 - **`memory`**: in-process cache, cleared when the build process exits
-- **`fs`**: persisted under `node_modules/.cache/vite-plugin-htjs-pages/fetch/`
+- **`fs`**: persisted under `node_modules/.cache/vite-plugin-html-pages/fetch/`
 - **`none`**: no caching, always fetches
 
 Only `GET` requests are cached by default. For other methods, provide a
@@ -450,9 +450,9 @@ htPages({
 
 Example output:
 
-    [vite-plugin-htjs-pages] discovered entries [...]
-    [vite-plugin-htjs-pages] dev pages [...]
-    [vite-plugin-htjs-pages] render bundle ...
+    [vite-plugin-html-pages] discovered entries [...]
+    [vite-plugin-html-pages] dev pages [...]
+    [vite-plugin-html-pages] render bundle ...
 
 This helps diagnose routing or build issues without modifying plugin
 code.
@@ -509,13 +509,13 @@ htPages({
 |-----|-----|
 | Astro | component‑based SSG |
 | Next.js | React SSR framework |
-| vite-plugin-htjs-pages | minimal HTML SSG for Vite |
+| vite-plugin-html-pages | minimal HTML SSG for Vite |
 
 ---
 
 # Use Cases
 
-`vite-plugin-htjs-pages` works well for:
+`vite-plugin-html-pages` works well for:
 
 -   **Vite static site generation**
 -   **File-based routing with Vite**

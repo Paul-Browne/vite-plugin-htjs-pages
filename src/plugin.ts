@@ -39,7 +39,7 @@ async function warnIfNotEsm(root: string): Promise<void> {
       );
     }
   } catch {
-      // ignore
+    // ignore
   }
 }
 
@@ -49,6 +49,9 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
   let devPages: HtPageInfo[] = [];
 
   const cleanUrls = options.cleanUrls ?? true;
+  const pageExtensions = options.pageExtensions?.length
+    ? options.pageExtensions
+    : ['.ht.js'];
 
   function logDebug(enabled: boolean | undefined, ...args: unknown[]) {
     if (!enabled) return;
@@ -175,11 +178,7 @@ export function htPages(options: HtPagesPluginOptions = {}): Plugin {
     async handleHotUpdate(ctx) {
       if (!server) return;
 
-      if (!ctx.file.endsWith('.ht.js')) {
-        return;
-      }
-
-      logDebug(options.debug, 'page updated', ctx.file);
+      logDebug(options.debug, 'file changed', ctx.file);
 
       await loadDevPages();
       return undefined;

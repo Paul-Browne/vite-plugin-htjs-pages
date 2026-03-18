@@ -9,30 +9,25 @@ import path2 from "path";
 
 // src/path-utils.ts
 import path from "path";
-function toPosix(p) {
-  return p.split(path.sep).join("/");
+function toPosix(value) {
+  return value.split(path.sep).join("/");
 }
-function stripHtSuffix(file) {
-  return file.replace(/\.ht\.js$/i, "");
+function normalizeFsPath(value) {
+  return path.normalize(value);
 }
-function normalizeRoutePath(p) {
-  let out = p.startsWith("/") ? p : `/${p}`;
-  out = out.replace(/\/+/g, "/");
-  if (out !== "/" && out.endsWith("/")) out = out.slice(0, -1);
-  return out;
+function normalizeRoutePath(value) {
+  const normalized = toPosix(value).replace(/\/+/g, "/");
+  if (!normalized || normalized === "/") return "/";
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
 }
-function normalizeFsPath(p) {
-  return toPosix(path.resolve(p));
+function stripPageSuffix(filePath, extensions) {
+  const normalized = toPosix(filePath);
+  const match = [...extensions].sort((a, b) => b.length - a.length).find((ext) => normalized.endsWith(ext));
+  if (!match) return normalized;
+  return normalized.slice(0, -match.length);
 }
 
 // src/route-utils.ts
-function safeDecodeURIComponent(str) {
-  try {
-    return decodeURIComponent(str);
-  } catch {
-    return str;
-  }
-}
 var DYNAMIC_SEGMENT_RE = /\[([A-Za-z0-9_]+)\]/g;
 var CATCH_ALL_SEGMENT_RE = /\[\.\.\.([A-Za-z0-9_]+)\]/g;
 var OPTIONAL_CATCH_ALL_SEGMENT_RE = /\[\.\.\.([A-Za-z0-9_]+)\]\?/g;
@@ -44,8 +39,8 @@ function getParamNames(relativeFromPagesDir) {
 function isDynamicPage(relativeFromPagesDir) {
   return /\[(?:\.\.\.)?[A-Za-z0-9_]+\]\??/.test(relativeFromPagesDir);
 }
-function toRoutePattern(relativeFromPagesDir) {
-  const noExt = stripHtSuffix(toPosix(relativeFromPagesDir));
+function toRoutePattern(relativeFromPagesDir, extensions) {
+  const noExt = stripPageSuffix(toPosix(relativeFromPagesDir), extensions);
   const withoutGroups = noExt.replace(ROUTE_GROUP_RE, "$1");
   const withoutIndex = withoutGroups.replace(/\/index$/i, "").replace(/^index$/i, "");
   const raw = withoutIndex.replace(OPTIONAL_CATCH_ALL_SEGMENT_RE, "*?:$1").replace(CATCH_ALL_SEGMENT_RE, "*:$1").replace(DYNAMIC_SEGMENT_RE, ":$1");
@@ -99,18 +94,18 @@ function routeMatch(pattern, urlPath) {
     const patternSeg = a[i];
     const urlSeg = b[i];
     if (patternSeg.startsWith("*?:")) {
-      params[patternSeg.slice(3)] = i < b.length ? b.slice(i).map(safeDecodeURIComponent).join("/") : "";
+      params[patternSeg.slice(3)] = i < b.length ? b.slice(i).map(decodeURIComponent).join("/") : "";
       return params;
     }
     if (patternSeg.startsWith("*:")) {
       const rest = b.slice(i);
       if (rest.length === 0) return null;
-      params[patternSeg.slice(2)] = rest.map(safeDecodeURIComponent).join("/");
+      params[patternSeg.slice(2)] = rest.map(decodeURIComponent).join("/");
       return params;
     }
     if (!urlSeg) return null;
     if (patternSeg.startsWith(":")) {
-      params[patternSeg.slice(1)] = safeDecodeURIComponent(urlSeg);
+      params[patternSeg.slice(1)] = decodeURIComponent(urlSeg);
       continue;
     }
     if (patternSeg !== urlSeg) return null;
@@ -146,18 +141,25 @@ function compareRoutePriority(a, b) {
 }
 
 // src/constants.ts
-var PLUGIN_NAME = "vite-plugin-htjs-pages";
+var PLUGIN_NAME = "vite-plugin-html-pages";
 var VIRTUAL_BUILD_ENTRY_ID = `\0${PLUGIN_NAME}:build-entry`;
 var VIRTUAL_MANIFEST_ID = `\0virtual:${PLUGIN_NAME}-manifest`;
 var CACHE_DIR_NAME = `node_modules/.cache/${PLUGIN_NAME}`;
 
 // src/discover.ts
+function buildDefaultIncludeGlobs(pagesDir, pageExtensions) {
+  return pageExtensions.map((ext) => {
+    const cleanExt = ext.startsWith(".") ? ext.slice(1) : ext;
+    return `${pagesDir}/**/*.${cleanExt}`;
+  });
+}
 async function discoverEntryPages(root, options) {
   const fgModule = await import("fast-glob");
   const fg = fgModule.default ?? fgModule;
-  const include = Array.isArray(options.include) ? options.include : [options.include ?? "src/**/*.ht.js"];
-  const exclude = Array.isArray(options.exclude) ? options.exclude : options.exclude ? [options.exclude] : [];
   const pagesDir = options.pagesDir ?? "src";
+  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js"];
+  const include = Array.isArray(options.include) ? options.include : options.include ? [options.include] : buildDefaultIncludeGlobs(pagesDir, pageExtensions);
+  const exclude = Array.isArray(options.exclude) ? options.exclude : options.exclude ? [options.exclude] : [];
   const pagesRoot = normalizeFsPath(path2.join(root, pagesDir));
   const files = await fg.glob(include, {
     cwd: root,
@@ -174,7 +176,7 @@ async function discoverEntryPages(root, options) {
       );
     }
     const dynamic = isDynamicPage(relativeFromPagesDir);
-    const routePattern = toRoutePattern(relativeFromPagesDir);
+    const routePattern = toRoutePattern(relativeFromPagesDir, pageExtensions);
     return {
       id: entryPath,
       entryPath,
@@ -364,6 +366,7 @@ function htPages(options = {}) {
   let server = null;
   let devPages = [];
   const cleanUrls = options.cleanUrls ?? true;
+  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js"];
   function logDebug(enabled, ...args) {
     if (!enabled) return;
     console.log(`[${PLUGIN_NAME}]`, ...args);
@@ -461,10 +464,7 @@ function htPages(options = {}) {
     },
     async handleHotUpdate(ctx) {
       if (!server) return;
-      if (!ctx.file.endsWith(".ht.js")) {
-        return;
-      }
-      logDebug(options.debug, "page updated", ctx.file);
+      logDebug(options.debug, "file changed", ctx.file);
       await loadDevPages();
       return void 0;
     },

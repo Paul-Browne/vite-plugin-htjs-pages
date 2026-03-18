@@ -4,6 +4,16 @@ import { getParamNames, isDynamicPage, toRoutePattern } from './route-utils';
 import type { HtPageInfo, HtPagesPluginOptions } from './types';
 import { PLUGIN_NAME } from './constants';
 
+function buildDefaultIncludeGlobs(
+  pagesDir: string,
+  pageExtensions: string[],
+): string[] {
+  return pageExtensions.map((ext) => {
+    const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
+    return `${pagesDir}/**/*.${cleanExt}`;
+  });
+}
+
 export async function discoverEntryPages(
   root: string,
   options: HtPagesPluginOptions,
@@ -11,9 +21,16 @@ export async function discoverEntryPages(
   const fgModule = await import('fast-glob');
   const fg = (fgModule.default ?? fgModule) as typeof import('fast-glob');
 
+  const pagesDir = options.pagesDir ?? 'src';
+  const pageExtensions = options.pageExtensions?.length
+    ? options.pageExtensions
+    : ['.ht.js'];
+
   const include = Array.isArray(options.include)
     ? options.include
-    : [options.include ?? 'src/**/*.ht.js'];
+    : options.include
+      ? [options.include]
+      : buildDefaultIncludeGlobs(pagesDir, pageExtensions);
 
   const exclude = Array.isArray(options.exclude)
     ? options.exclude
@@ -21,7 +38,6 @@ export async function discoverEntryPages(
       ? [options.exclude]
       : [];
 
-  const pagesDir = options.pagesDir ?? 'src';
   const pagesRoot = normalizeFsPath(path.join(root, pagesDir));
 
   const files = await fg.glob(include, {
@@ -47,7 +63,7 @@ export async function discoverEntryPages(
       }
 
       const dynamic = isDynamicPage(relativeFromPagesDir);
-      const routePattern = toRoutePattern(relativeFromPagesDir);
+      const routePattern = toRoutePattern(relativeFromPagesDir, pageExtensions);
 
       return {
         id: entryPath,

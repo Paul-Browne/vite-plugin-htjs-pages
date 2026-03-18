@@ -1,13 +1,5 @@
-import { normalizeRoutePath, stripHtSuffix, toPosix } from './path-utils';
+import { normalizeRoutePath, stripPageSuffix, toPosix } from './path-utils';
 import type { HtPageInfo, StaticParamRecord } from './types';
-
-function safeDecodeURIComponent(str: string): string {
-  try {
-    return decodeURIComponent(str);
-  } catch {
-    return str;
-  }
-}
 
 const DYNAMIC_SEGMENT_RE = /\[([A-Za-z0-9_]+)\]/g;
 const CATCH_ALL_SEGMENT_RE = /\[\.\.\.([A-Za-z0-9_]+)\]/g;
@@ -23,8 +15,11 @@ export function isDynamicPage(relativeFromPagesDir: string): boolean {
   return /\[(?:\.\.\.)?[A-Za-z0-9_]+\]\??/.test(relativeFromPagesDir);
 }
 
-export function toRoutePattern(relativeFromPagesDir: string): string {
-  const noExt = stripHtSuffix(toPosix(relativeFromPagesDir));
+export function toRoutePattern(
+  relativeFromPagesDir: string,
+  extensions: string[],
+): string {
+  const noExt = stripPageSuffix(toPosix(relativeFromPagesDir), extensions);
 
   const withoutGroups = noExt.replace(ROUTE_GROUP_RE, '$1');
   const withoutIndex = withoutGroups.replace(/\/index$/i, '').replace(/^index$/i, '');
@@ -121,7 +116,7 @@ export function routeMatch(
 
     if (patternSeg.startsWith('*?:')) {
       params[patternSeg.slice(3)] =
-        i < b.length ? b.slice(i).map(safeDecodeURIComponent).join('/') : '';
+        i < b.length ? b.slice(i).map(decodeURIComponent).join('/') : '';
       return params;
     }
 
@@ -129,14 +124,14 @@ export function routeMatch(
       const rest = b.slice(i);
       if (rest.length === 0) return null;
 
-      params[patternSeg.slice(2)] = rest.map(safeDecodeURIComponent).join('/');
+      params[patternSeg.slice(2)] = rest.map(decodeURIComponent).join('/');
       return params;
     }
 
     if (!urlSeg) return null;
 
     if (patternSeg.startsWith(':')) {
-      params[patternSeg.slice(1)] = safeDecodeURIComponent(urlSeg);
+      params[patternSeg.slice(1)] = decodeURIComponent(urlSeg);
       continue;
     }
 
@@ -177,6 +172,5 @@ export function compareRoutePriority(a: string, b: string): number {
     }
   }
 
-  // More specific / longer routes first when otherwise equal
   return bSegs.length - aSegs.length;
 }
