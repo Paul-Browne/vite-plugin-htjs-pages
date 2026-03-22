@@ -1,16 +1,82 @@
 // src/plugin.ts
 import pLimit from "p-limit";
 
+// src/static-assets.ts
+import fs from "fs/promises";
+import path from "path";
+import fg from "fast-glob";
+import { transformWithEsbuild } from "vite";
+function normalizeSlashes(value) {
+  return value.replace(/\\/g, "/");
+}
+function hasAnySuffix(value, suffixes) {
+  return suffixes.some((suffix) => value.endsWith(suffix));
+}
+function toOutputFileName(relativePathFromSrc) {
+  if (relativePathFromSrc.endsWith(".ts")) {
+    return relativePathFromSrc.slice(0, -3) + ".js";
+  }
+  return relativePathFromSrc;
+}
+async function collectStaticAssets(args) {
+  const { root, pagesDir, pageExtensions } = args;
+  const srcDir = path.join(root, pagesDir);
+  const entries = await fg("**/*", {
+    cwd: srcDir,
+    onlyFiles: true,
+    dot: false,
+    absolute: false
+  });
+  const assets = [];
+  for (const entry of entries) {
+    const rel = normalizeSlashes(entry);
+    if (hasAnySuffix(rel, pageExtensions)) {
+      continue;
+    }
+    const absolutePath = path.join(srcDir, rel);
+    if (rel.endsWith(".ts")) {
+      assets.push({
+        absolutePath,
+        relativePathFromSrc: rel,
+        outputFileName: normalizeSlashes(toOutputFileName(rel)),
+        kind: "ts"
+      });
+      continue;
+    }
+    assets.push({
+      absolutePath,
+      relativePathFromSrc: rel,
+      outputFileName: normalizeSlashes(rel),
+      kind: "copy"
+    });
+  }
+  return assets;
+}
+async function buildStaticAssetSource(asset) {
+  if (asset.kind === "copy") {
+    return fs.readFile(asset.absolutePath);
+  }
+  const source = await fs.readFile(asset.absolutePath, "utf8");
+  const result = await transformWithEsbuild(source, asset.absolutePath, {
+    loader: "ts",
+    format: "esm",
+    target: "es2020",
+    sourcemap: false,
+    minify: false
+  });
+  return result.code;
+}
+
 // src/discover.ts
-import path2 from "path";
+import path3 from "path";
 
 // src/path-utils.ts
-import path from "path";
+import path2 from "path";
 function toPosix(value) {
   return value.replace(/\\/g, "/");
 }
 function normalizeFsPath(value) {
-  return path.normalize(value);
+  return path2.normalize(value);
 }
 function normalizeRoutePath(value) {
   const normalized = toPosix(value).replace(/\/+/g, "/");
@@ -126,21 +192,21 @@ function buildDefaultIncludeGlobs(pagesDir, pageExtensions) {
 }
 async function discoverEntryPages(root, options) {
   const fgModule = await import("fast-glob");
-  const fg = fgModule.default ?? fgModule;
+  const fg2 = fgModule.default ?? fgModule;
   const pagesDir = options.pagesDir ?? "src";
   const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js", ".html.js", ".ht.ts", ".html.ts"];
   const include = Array.isArray(options.include) ? options.include : options.include ? [options.include] : buildDefaultIncludeGlobs(pagesDir, pageExtensions);
   const exclude = Array.isArray(options.exclude) ? options.exclude : options.exclude ? [options.exclude] : [];
-  const pagesRoot = normalizeFsPath(path2.join(root, pagesDir));
-  const files = await fg.glob(include, {
+  const pagesRoot = normalizeFsPath(path3.join(root, pagesDir));
+  const files = await fg2.glob(include, {
     cwd: root,
     ignore: exclude,
     absolute: true
   });
   return files.sort().map((absolutePath) => {
     const entryPath = normalizeFsPath(absolutePath);
-    const relativePath = toPosix(path2.relative(root, entryPath));
-    const relativeFromPagesDir = toPosix(path2.relative(pagesRoot, entryPath));
+    const relativePath = toPosix(path3.relative(root, entryPath));
+    const relativeFromPagesDir = toPosix(path3.relative(pagesRoot, entryPath));
     if (relativeFromPagesDir.startsWith("../") || relativeFromPagesDir === "..") {
       throw new Error(
         `[${PLUGIN_NAME}] Page is outside pagesDir: ${entryPath} (pagesDir: ${pagesDir})`
@@ -164,8 +230,8 @@ async function discoverEntryPages(root, options) {
 }
 
 // src/dev-server.ts
-import fs from "fs";
-import path4 from "path";
+import fs2 from "fs";
+import path5 from "path";
 
 // src/errors.ts
 function invalidHtmlReturn(page, value) {
@@ -218,7 +284,7 @@ async function renderPage(page, mod, dev = false) {
 }
 
 // src/module-loader.ts
-import path3 from "path";
+import path4 from "path";
 import { createServer } from "vite";
 var buildServer = null;
 async function createPageModuleLoader(args) {
@@ -245,7 +311,7 @@ async function createPageModuleLoader(args) {
     buildServer = await createServer(config);
   }
   return async (entryPath) => {
-    const relativePath = "/" + path3.relative(root, entryPath).replace(/\\/g, "/");
+    const relativePath = "/" + path4.relative(root, entryPath).replace(/\\/g, "/");
     const mod = await buildServer.ssrLoadModule(relativePath);
     return mod;
   };
@@ -269,8 +335,8 @@ function tryRewriteRootAssetToSrc(server, url) {
   if (!isStaticAssetRequest(url)) return null;
   if (url.startsWith("/src/")) return null;
   const root = server.config.root;
-  const candidate = path4.join(root, "src", url.slice(1));
-  if (fs.existsSync(candidate)) {
+  const candidate = path5.join(root, "src", url.slice(1));
+  if (fs2.existsSync(candidate)) {
     return `/src/${url.slice(1)}`;
   }
   return null;
@@ -368,149 +434,6 @@ async function buildPageIndex(args) {
   return pages;
 }
 
-// src/assets.ts
-import fs2 from "fs";
-import path5 from "path";
-var EXTERNAL_URL_RE = /^(?:[a-z]+:)?\/\//i;
-function isLocalAssetUrl(url) {
-  return !!url && !url.startsWith("data:") && !url.startsWith("mailto:") && !url.startsWith("tel:") && !url.startsWith("#") && !EXTERNAL_URL_RE.test(url);
-}
-function stripQueryAndHash(url) {
-  return url.split("#")[0].split("?")[0];
-}
-function extractHtmlAssets(html) {
-  const assets = [];
-  for (const match of html.matchAll(
-    /<link\b[^>]*\brel=["']stylesheet["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi
-  )) {
-    assets.push({ kind: "css", url: match[1] });
-  }
-  for (const match of html.matchAll(
-    /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi
-  )) {
-    assets.push({ kind: "js", url: match[1] });
-  }
-  return dedupeExtractedAssets(assets);
-}
-function dedupeExtractedAssets(assets) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const asset of assets) {
-    const key = `${asset.kind}:${asset.url}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(asset);
-  }
-  return out;
-}
-function resolveLocalAssetPath(args) {
-  const { root, pagesDir, pageDir, url } = args;
-  if (!isLocalAssetUrl(url)) return null;
-  const cleanUrl = stripQueryAndHash(url);
-  let abs;
-  if (cleanUrl.startsWith("/")) {
-    abs = path5.join(root, pagesDir, cleanUrl.slice(1));
-  } else if (cleanUrl.startsWith(`${pagesDir}/`)) {
-    abs = path5.join(root, cleanUrl);
-  } else {
-    const baseDir = pageDir ?? path5.join(root, pagesDir);
-    abs = path5.resolve(baseDir, cleanUrl);
-  }
-  return fs2.existsSync(abs) ? abs : null;
-}
-function emitHtmlAsset(args) {
-  const { ctx, kind, absolutePath } = args;
-  if (kind === "css" || kind === "js") {
-    return ctx.emitFile({
-      type: "chunk",
-      id: absolutePath,
-      name: path5.basename(absolutePath, path5.extname(absolutePath))
-    });
-  }
-  throw new Error(`[vite-plugin-html-pages] Unsupported asset kind: ${kind}`);
-}
-function replaceAllLiteral(input, search, replacement) {
-  return input.split(search).join(replacement);
-}
-function rewriteHtmlAssetUrls(html, replacements) {
-  let out = html;
-  for (const [originalUrl, builtUrl] of replacements) {
-    out = replaceAllLiteral(
-      out,
-      `href="${originalUrl}"`,
-      `href="${builtUrl}"`
-    );
-    out = replaceAllLiteral(
-      out,
-      `href='${originalUrl}'`,
-      `href='${builtUrl}'`
-    );
-    out = replaceAllLiteral(
-      out,
-      `src="${originalUrl}"`,
-      `src="${builtUrl}"`
-    );
-    out = replaceAllLiteral(
-      out,
-      `src='${originalUrl}'`,
-      `src='${builtUrl}'`
-    );
-  }
-  return out;
-}
-async function collectHtmlAssetRefs(args) {
-  const { ctx, root, pagesDir, htmlByPageKey } = args;
-  const refs = /* @__PURE__ */ new Map();
-  for (const { html, pageDir } of htmlByPageKey.values()) {
-    const assets = extractHtmlAssets(html);
-    for (const asset of assets) {
-      const abs = resolveLocalAssetPath({
-        root,
-        pagesDir,
-        pageDir,
-        url: asset.url
-      });
-      if (!abs) continue;
-      const key = `${asset.kind}:${asset.url}`;
-      if (refs.has(key)) continue;
-      const refId = emitHtmlAsset({
-        ctx,
-        kind: asset.kind,
-        absolutePath: abs
-      });
-      refs.set(key, {
-        kind: asset.kind,
-        originalUrl: asset.url,
-        absolutePath: abs,
-        refId
-      });
-    }
-  }
-  return refs;
-}
-function buildHtmlAssetReplacementMap(args) {
-  const { ctx, refs, bundle } = args;
-  const replacements = /* @__PURE__ */ new Map();
-  for (const ref of refs.values()) {
-    if (ref.kind === "js") {
-      const fileName = ctx.getFileName(ref.refId);
-      replacements.set(ref.originalUrl, `/${fileName}`);
-      continue;
-    }
-    if (ref.kind === "css") {
-      const jsEntryFile = ctx.getFileName(ref.refId);
-      const jsChunk = bundle[jsEntryFile];
-      if (jsChunk && jsChunk.type === "chunk" && "viteMetadata" in jsChunk && jsChunk.viteMetadata?.importedCss && jsChunk.viteMetadata.importedCss.size > 0) {
-        const cssFile = [...jsChunk.viteMetadata.importedCss][0];
-        replacements.set(ref.originalUrl, `/${cssFile}`);
-        continue;
-      }
-      replacements.set(ref.originalUrl, `/${jsEntryFile}`);
-    }
-  }
-  return replacements;
-}
-
 // src/plugin.ts
 import fs3 from "fs";
 import path6 from "path";
@@ -539,9 +462,9 @@ function htPages(options = {}) {
   let root = process.cwd();
   let server = null;
   let devPages = [];
-  let htmlAssetRefs = /* @__PURE__ */ new Map();
   const cleanUrls = options.cleanUrls ?? true;
   const pagesDir = options.pagesDir ?? "src";
+  const pageExtensions = options.pageExtensions?.length ? options.pageExtensions : [".ht.js", ".html.js", ".ht.ts", ".html.ts"];
   function logDebug(enabled, ...args) {
     if (!enabled) return;
     console.log(`[${PLUGIN_NAME}]`, ...args);
@@ -630,38 +553,21 @@ function htPages(options = {}) {
       for (const entry of entries) {
         this.addWatchFile(entry.entryPath);
       }
-      if (server) {
-        return;
-      }
-      htmlAssetRefs.clear();
-      const { modulesByEntry, pages } = await buildPagesPipeline();
-      const htmlByPageKey = /* @__PURE__ */ new Map();
-      for (const page of pages) {
-        const mod = modulesByEntry.get(page.entryPath);
-        if (!mod) {
-          throw new Error(
-            `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`
-          );
-        }
-        const html = await renderPage(page, mod, false);
-        htmlByPageKey.set(page.entryPath, {
-          html,
-          pageDir: path6.dirname(page.absolutePath)
-        });
-      }
-      htmlAssetRefs = await collectHtmlAssetRefs({
-        ctx: this,
+      const staticAssets = await collectStaticAssets({
         root,
         pagesDir,
-        htmlByPageKey
+        pageExtensions
       });
+      for (const asset of staticAssets) {
+        this.addWatchFile(asset.absolutePath);
+      }
       logDebug(
         options.debug,
-        "collected html assets",
-        [...htmlAssetRefs.values()].map((ref) => ({
-          kind: ref.kind,
-          originalUrl: ref.originalUrl,
-          absolutePath: ref.absolutePath
+        "static assets",
+        staticAssets.map((asset) => ({
+          kind: asset.kind,
+          input: asset.relativePathFromSrc,
+          output: asset.outputFileName
         }))
       );
     },
@@ -690,23 +596,31 @@ function htPages(options = {}) {
     async generateBundle(_, bundle) {
       try {
         const { modulesByEntry, pages } = await buildPagesPipeline();
-        const assetReplacements = buildHtmlAssetReplacementMap({
-          ctx: this,
-          refs: htmlAssetRefs,
-          bundle
+        const staticAssets = await collectStaticAssets({
+          root,
+          pagesDir,
+          pageExtensions
         });
-        logDebug(
-          options.debug,
-          "asset replacements",
-          [...assetReplacements.entries()]
-        );
         logDebug(
           options.debug,
           "emitting pages",
           pages.map((p) => p.fileName)
         );
+        logDebug(
+          options.debug,
+          "emitting static assets",
+          staticAssets.map((asset) => asset.outputFileName)
+        );
         const limit = pLimit(options.renderConcurrency ?? 8);
         const batchSize = options.renderBatchSize ?? Math.max(options.renderConcurrency ?? 8, 32);
+        for (const asset of staticAssets) {
+          const source = await buildStaticAssetSource(asset);
+          this.emitFile({
+            type: "asset",
+            fileName: asset.outputFileName,
+            source
+          });
+        }
         for (const batch of chunkArray(pages, batchSize)) {
           await Promise.all(
             batch.map(
@@ -717,8 +631,7 @@ function htPages(options = {}) {
                     `[${PLUGIN_NAME}] Missing module for page entry: ${page.entryPath}`
                   );
                 }
-                let html = await renderPage(page, mod, false);
-                html = rewriteHtmlAssetUrls(html, assetReplacements);
+                const html = await renderPage(page, mod, false);
                 this.emitFile({
                   type: "asset",
                   fileName: options.mapOutputPath?.(page) ?? page.fileName,
@@ -736,8 +649,7 @@ function htPages(options = {}) {
               `[${PLUGIN_NAME}] Missing module for 404 page entry: ${notFoundPage.entryPath}`
             );
           }
-          let html = await renderPage(notFoundPage, mod, false);
-          html = rewriteHtmlAssetUrls(html, assetReplacements);
+          const html = await renderPage(notFoundPage, mod, false);
           this.emitFile({
             type: "asset",
             fileName: "404.html",
@@ -746,49 +658,49 @@ function htPages(options = {}) {
           logDebug(options.debug, "generated 404.html from user page");
         } else {
           const default404 = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>404 - Page Not Found</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-      }
-      body {
-        margin: 0;
-        font-family: system-ui, sans-serif;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 2rem;
-      }
-      main {
-        max-width: 40rem;
-        text-align: center;
-      }
-      h1 {
-        font-size: 3rem;
-        margin: 0 0 1rem;
-      }
-      p {
-        margin: 0.5rem 0;
-        line-height: 1.5;
-      }
-      a {
-        color: inherit;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>404</h1>
-      <p>Page not found.</p>
-      <p><a href="/">Go back home</a></p>
-    </main>
-  </body>
-</html>
-`;
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>404 - Page Not Found</title>
+        <style>
+          :root {
+            color-scheme: light dark;
+          }
+          body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 2rem;
+          }
+          main {
+            max-width: 40rem;
+            text-align: center;
+          }
+          h1 {
+            font-size: 3rem;
+            margin: 0 0 1rem;
+          }
+          p {
+            margin: 0.5rem 0;
+            line-height: 1.5;
+          }
+          a {
+            color: inherit;
+          }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>404</h1>
+          <p>Page not found.</p>
+          <p><a href="/">Go back home</a></p>
+        </main>
+      </body>
+    </html>
+    `;
           this.emitFile({
             type: "asset",
             fileName: "404.html",
